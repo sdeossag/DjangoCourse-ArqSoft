@@ -1,9 +1,11 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django import forms
 from django.http import HttpResponseRedirect
-from django.views.generic import TemplateView
+from django.views.generic import TemplateView, ListView
 from django.views import View
 from django.urls import reverse
+from django.core.exceptions import ValidationError
+from .models import Product
 
 # Create your views here.
 class HomePageView(TemplateView):
@@ -36,48 +38,40 @@ class ContactPageView(TemplateView):
         })
         return context
 
-class Product:
-    products = [
-    {"id":"1", "name":"TV", "description":"Best TV", "price":"150 USD"},
-    {"id":"2", "name":"iPhone", "description":"Best iPhone", "price":"120 USD"},
-    {"id":"3", "name":"Glasses", "description":"Best Glasses", "price":"70 USD"},
-    {"id":"4", "name":"Chromecast", "description":"Best Chromecast", "price":"90 USD"},
-    {"id":"5", "name":"Laptop", "description":"Best Laptop", "price":"200 USD"},
-    {"id":"6", "name":"Headphones", "description":"Best Headphones", "price":"50 USD"},
-    {"id":"7", "name":"Smartwatch", "description":"Best Smartwatch", "price":"80 USD"},
-    {"id":"8", "name":"Camera", "description":"Best Camera", "price":"300 USD"},
-    {"id":"9", "name":"Speaker", "description":"Best Speaker", "price":"120 USD"},
-    {"id":"10", "name":"Tablet", "description":"Best Tablet", "price":"150 USD"},
-    
-    ]
-
 class ProductIndexView(View):
     template_name = 'products/index.html'
     def get(self, request):
         viewData = {}
         viewData["title"] = "Products - Online Store"
         viewData["subtitle"] = "List of products"
-        viewData["products"] = Product.products
+        viewData["products"] = Product.objects.all()
         return render(request, self.template_name, viewData)
     
 class ProductShowView(View):
     template_name = 'products/show.html'
     def get(self, request, id):
-        if not id.isdigit() or int(id) < 1 or int(id) > len(Product.products):
+ # Check if product id is valid
+        try:
+            product_id = int(id)
+            if product_id < 1:
+                raise ValueError("Product id must be 1 or greater")
+            product = get_object_or_404(Product, pk=product_id)
+        except (ValueError, IndexError):
+        # If the product id is not valid, redirect to the home page
             return HttpResponseRedirect(reverse('home'))
-        
-        product = Product.products[int(id)-1]
-        viewData = {
-            "title": product["name"] + " - Online Store",
-            "subtitle": product["name"] + " - Product information",
-            "product": product,
-            "price_value": int(product["price"].split()[0])  # Solo el número
-        }
+
+        viewData = {}
+        product = get_object_or_404(Product, pk=product_id)
+        viewData["title"] = product.name + " - Online Store"
+        viewData["subtitle"] = product.name + " - Product information"
+        viewData["product"] = product
+
         return render(request, self.template_name, viewData)
     
-class ProductForm(forms.Form):
-    name = forms.CharField(required=True)
-    price = forms.FloatField(required=True)
+class ProductForm(forms.ModelForm):
+    class Meta:
+        model = Product
+        fields = ['name', 'price']
 
     def clean_price(self):
         price = self.cleaned_data.get('price')
@@ -98,7 +92,19 @@ class ProductCreateView(View):
     def post(self, request):
         form = ProductForm(request.POST)
         if form.is_valid():
+            form.save()
             return render(request, 'products/success.html', {"title": "Product Created"})
         else:
             viewData = {"title": "Create product", "form": form}
             return render(request, self.template_name, viewData)
+        
+class ProductListView(ListView):
+    model = Product
+    template_name = 'product_list.html'
+    context_object_name = 'products' # This will allow you to loop through 'products' in your template
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['title'] = 'Products - Online Store'
+        context['subtitle'] = 'List of products'
+        return context 
